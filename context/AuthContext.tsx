@@ -31,10 +31,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateUser = async (userData: Partial<User>) => {
     if (!firebaseUser) return;
-    
+
     const userRef = doc(db, 'users', firebaseUser.uid);
     await setDoc(userRef, userData, { merge: true });
-    
+
     if (user) {
       setUser({ ...user, ...userData });
     }
@@ -42,13 +42,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
+
+    // Add additional scopes for better user info
+    provider.addScope('email');
+    provider.addScope('profile');
+
+    // Set custom parameters for better UX
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
+
     try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Error during Google sign-in:", error);
-      // The onAuthStateChanged listener will handle success cases.
-      // Errors can be handled here, e.g., by showing a toast notification.
-      throw error; // Re-throw to be caught by the UI component if needed
+      const result = await signInWithPopup(auth, provider);
+      console.log('Google sign-in successful:', result.user.email);
+      return result;
+    } catch (error: any) {
+      console.error("Detailed Google sign-in error:", error);
+
+      // Handle specific error codes for better user experience
+      switch (error.code) {
+        case 'auth/popup-closed-by-user':
+          throw new Error('Sign-in was cancelled. Please try again.');
+        case 'auth/popup-blocked':
+          throw new Error('Popup was blocked by your browser. Please allow popups for this site and try again.');
+        case 'auth/unauthorized-domain':
+          throw new Error('This domain is not authorized for Google sign-in. Please contact support.');
+        case 'auth/operation-not-allowed':
+          throw new Error('Google sign-in is not enabled. Please contact support.');
+        case 'auth/cancelled-popup-request':
+          throw new Error('Another sign-in popup is already open. Please close it and try again.');
+        case 'auth/network-request-failed':
+          throw new Error('Network error. Please check your internet connection and try again.');
+        default:
+          throw new Error(`Failed to sign in with Google: ${error.message || 'Unknown error'}`);
+      }
     }
   };
 
@@ -56,11 +83,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setFirebaseUser(firebaseUser);
-        
+
         // Get or create user document
         const userRef = doc(db, 'users', firebaseUser.uid);
         const userSnap = await getDoc(userRef);
-        
+
         if (userSnap.exists()) {
           const userData = userSnap.data();
           setUser({
